@@ -210,11 +210,18 @@ if __name__ == "__main__":
     print("└──────────────────────────────────────────────────────────────────────────────┘")
 
     # Run the server
-    if args.transport == "stdio":
-        mcp.run(transport="stdio")
-    else:
-        # Note: If show_banner is not supported in your version, it will fallback to default
-        try:
-            mcp.run(transport=args.transport, host=args.host, port=args.port, show_banner=False)
-        except TypeError:
-            mcp.run(transport=args.transport, host=args.host, port=args.port)
+    try:
+        if args.transport == "stdio":
+            mcp.run(transport="stdio")
+        else:
+            # Note: If show_banner is not supported in your version, it will fallback to default
+            try:
+                mcp.run(transport=args.transport, host=args.host, port=args.port, show_banner=False)
+            except TypeError:
+                mcp.run(transport=args.transport, host=args.host, port=args.port)
+    except KeyboardInterrupt:
+        print("\n⚠️  Server stopped by user. Exiting gracefully...")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n❌ Server error: {e}")
+        sys.exit(1)
