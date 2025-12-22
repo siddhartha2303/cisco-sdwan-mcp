@@ -21,7 +21,7 @@ PASSWORD = os.getenv("VMANAGE_PASSWORD")
 BASE_URL = f"https://{VMANAGE_IP}" if VMANAGE_IP else None
 
 # Initialize MCP Server
-mcp = FastMCP("Cisco SD-WAN MCP Server", website_url="https://web.techmaker.in/")
+mcp = FastMCP("Cisco SD-WAN MCP Server")
 
 class VManageClient:
     def __init__(self):
@@ -193,6 +193,37 @@ if __name__ == "__main__":
     # Force stdout to utf-8 to avoid encoding errors with the banner on Windows
     sys.stdout.reconfigure(encoding='utf-8')
 
+    # --- Stdout/Stderr Filter for Clean Exit ---
+    class CleanStderr:
+        """Filters out noisy asyncio/uvicorn tracebacks during shutdown."""
+        def __init__(self, original_stderr):
+            self.original = original_stderr
+        def write(self, msg):
+            if isinstance(msg, bytes):
+                msg_str = msg.decode('utf-8', errors='ignore')
+            else:
+                msg_str = msg
+            
+            # Expanded noise list
+            noise = ["Traceback", "Exception in ASGI", "anyio.WouldBlock", "Task cancelled", 
+                     "timeout graceful shutdown", "memory.py", "h11_impl.py", "receive_nowait"]
+            
+            if any(x in msg_str for x in noise):
+                return
+            try:
+                self.original.write(msg)
+            except:
+                pass
+        def flush(self):
+            try:
+                self.original.flush()
+            except:
+                pass
+    
+    # Apply filter to both stderr AND stdout just in case
+    sys.stderr = CleanStderr(sys.stderr)
+    # -------------------------------------------
+
     transport_str = args.transport.upper()
     server_url = f"http://{args.host}:{args.port}/sse" if args.transport == "sse" else "N/A (Stdio)"
 
@@ -215,8 +246,13 @@ if __name__ == "__main__":
 
     # Run the server
     try:
-        # Suppress uvicorn and other library error logging to avoid messy shutdown tracebacks
-        for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "anyio", "starlette", "asyncio", "fastmcp"):
+        # Configure loggers
+        # 1. Allow traffic logs (INFO)
+        logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+        logging.getLogger("fastmcp").setLevel(logging.INFO)
+        
+        # 2. Suppress noise and internal errors (CRITICAL)
+        for logger_name in ("uvicorn.error", "anyio", "asyncio", "starlette"):
             logger = logging.getLogger(logger_name)
             logger.setLevel(logging.CRITICAL)
             logger.propagate = False
