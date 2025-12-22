@@ -210,12 +210,22 @@ if __name__ == "__main__":
     print("└──────────────────────────────────────────────────────────────────────────────┘")
 
     # Run the server
-    if args.transport == "stdio":
-        mcp.run(transport="stdio")
-    else:
-        # Note: If show_banner is not supported in your version, it will fallback to default
-        try:
-            mcp.run(transport=args.transport, host=args.host, port=args.port, show_banner=False)
-        except TypeError:
-            mcp.run(transport=args.transport, host=args.host, port=args.port)
+    try:
+        if args.transport == "stdio":
+            mcp.run(transport="stdio")
+        else:
+            # Note: If show_banner is not supported in your version, it will fallback to default
+            try:
+                mcp.run(transport=args.transport, host=args.host, port=args.port, show_banner=False)
+            except TypeError:
+                mcp.run(transport=args.transport, host=args.host, port=args.port)
+    except KeyboardInterrupt:
+        # Explicitly handle Ctrl+C if caught directly
+        print("\n⚠️  Server stopped by user. Exiting gracefully...")
+        sys.exit(0)
+    except BaseException:
+        # Catch-all for any other shutdown noise (SystemExit, async cancellation errors, etc.)
+        # We suppress the traceback here to keep the CLI clean
+        print("\n⚠️  Server stopped. Exiting...")
+        sys.exit(0)
 
