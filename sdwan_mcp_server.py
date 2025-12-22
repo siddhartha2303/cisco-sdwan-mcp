@@ -21,7 +21,7 @@ PASSWORD = os.getenv("VMANAGE_PASSWORD")
 BASE_URL = f"https://{VMANAGE_IP}" if VMANAGE_IP else None
 
 # Initialize MCP Server
-mcp = FastMCP("Cisco SD-WAN MCP Server", website_url="https://web.techmaker.in/")
+mcp = FastMCP("Cisco SD-WAN MCP Server")
 
 class VManageClient:
     def __init__(self):
