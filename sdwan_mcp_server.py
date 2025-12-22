@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import argparse
+import logging
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if present
@@ -211,6 +212,9 @@ if __name__ == "__main__":
 
     # Run the server
     try:
+        # Suppress uvicorn error logging to avoid messy shutdown tracebacks
+        logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
+        
         if args.transport == "stdio":
             mcp.run(transport="stdio")
         else:
