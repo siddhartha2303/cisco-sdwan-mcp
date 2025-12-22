@@ -193,6 +193,27 @@ if __name__ == "__main__":
     # Force stdout to utf-8 to avoid encoding errors with the banner on Windows
     sys.stdout.reconfigure(encoding='utf-8')
 
+    # --- Stdout/Stderr Filter for Clean Exit ---
+    class CleanStderr:
+        """Filters out noisy asyncio/uvicorn tracebacks during shutdown."""
+        def __init__(self, original_stderr):
+            self.original = original_stderr
+        def write(self, msg):
+            if any(x in msg for x in ["Traceback", "Exception in ASGI", "anyio.WouldBlock", "Task cancelled", "timeout graceful shutdown"]):
+                return
+            try:
+                self.original.write(msg)
+            except:
+                pass # If original stream is closed
+        def flush(self):
+            try:
+                self.original.flush()
+            except:
+                pass
+    
+    sys.stderr = CleanStderr(sys.stderr)
+    # -------------------------------------------
+
     transport_str = args.transport.upper()
     server_url = f"http://{args.host}:{args.port}/sse" if args.transport == "sse" else "N/A (Stdio)"
 
