@@ -199,12 +199,21 @@ if __name__ == "__main__":
         def __init__(self, original_stderr):
             self.original = original_stderr
         def write(self, msg):
-            if any(x in msg for x in ["Traceback", "Exception in ASGI", "anyio.WouldBlock", "Task cancelled", "timeout graceful shutdown"]):
+            if isinstance(msg, bytes):
+                msg_str = msg.decode('utf-8', errors='ignore')
+            else:
+                msg_str = msg
+            
+            # Expanded noise list
+            noise = ["Traceback", "Exception in ASGI", "anyio.WouldBlock", "Task cancelled", 
+                     "timeout graceful shutdown", "memory.py", "h11_impl.py", "receive_nowait"]
+            
+            if any(x in msg_str for x in noise):
                 return
             try:
                 self.original.write(msg)
             except:
-                pass # If original stream is closed
+                pass
         def flush(self):
             try:
                 self.original.flush()
