@@ -190,6 +190,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
+    # Force stdout to utf-8 to avoid encoding errors with the banner on Windows
+    sys.stdout.reconfigure(encoding='utf-8')
+
     transport_str = args.transport.upper()
     server_url = f"http://{args.host}:{args.port}/sse" if args.transport == "sse" else "N/A (Stdio)"
 
@@ -213,7 +216,10 @@ if __name__ == "__main__":
     # Run the server
     try:
         # Suppress uvicorn error logging to avoid messy shutdown tracebacks
-        logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
+        for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+            logger = logging.getLogger(logger_name)
+            logger.setLevel(logging.CRITICAL)
+            logger.propagate = False
         
         if args.transport == "stdio":
             mcp.run(transport="stdio")
