@@ -215,8 +215,8 @@ if __name__ == "__main__":
 
     # Run the server
     try:
-        # Suppress uvicorn error logging to avoid messy shutdown tracebacks
-        for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        # Suppress uvicorn and other library error logging to avoid messy shutdown tracebacks
+        for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "anyio", "starlette", "asyncio", "fastmcp"):
             logger = logging.getLogger(logger_name)
             logger.setLevel(logging.CRITICAL)
             logger.propagate = False
