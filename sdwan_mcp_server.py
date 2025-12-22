@@ -220,8 +220,11 @@ if __name__ == "__main__":
             except TypeError:
                 mcp.run(transport=args.transport, host=args.host, port=args.port)
     except KeyboardInterrupt:
+        # Explicitly handle Ctrl+C if caught directly
         print("\n⚠️  Server stopped by user. Exiting gracefully...")
         sys.exit(0)
-    except Exception as e:
-        print(f"\n❌ Server error: {e}")
-        sys.exit(1)
+    except BaseException:
+        # Catch-all for any other shutdown noise (SystemExit, async cancellation errors, etc.)
+        # We suppress the traceback here to keep the CLI clean
+        print("\n⚠️  Server stopped. Exiting...")
+        sys.exit(0)
