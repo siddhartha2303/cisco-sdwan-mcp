@@ -47,7 +47,8 @@ The **Cisco SD-WAN MCP Server** abstracts the complexity of the vManage REST API
 
 ## 🎥 Demo
 
-<video src="https://github.com/siddhartha2303/cisco-sdwan-mcp/raw/main/src/cisco-sdwan-mcp.mp4" autoplay loop muted width="100%"></video>
+<video src="https://raw.githubusercontent.com/siddhartha2303/cisco-sdwan-mcp/main/src/cisco-sdwan-mcp.mp4" controls="controls" muted="muted" style="max-width: 100%;">
+</video>
 
 ## ✅ Prerequisites
 
