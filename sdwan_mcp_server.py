@@ -177,11 +177,6 @@ def get_running_config(device_id: str) -> str:
     # This usually returns raw text, not JSON
     return str(data)
 
-import sys
-import argparse
-
-# ... (Previous code)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cisco SD-WAN MCP Server")
     parser.add_argument("--transport", default="stdio", choices=["stdio", "sse", "streamable-http"], help="Transport mode")
@@ -220,7 +215,6 @@ if __name__ == "__main__":
             except:
                 pass
     
-    # Apply filter to both stderr AND stdout just in case
     sys.stderr = CleanStderr(sys.stderr)
     # -------------------------------------------
 
@@ -274,4 +268,3 @@ if __name__ == "__main__":
         # We suppress the traceback here to keep the CLI clean
         print("\n⚠️  Server stopped. Exiting...")
         sys.exit(0)
-
