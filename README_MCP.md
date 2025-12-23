@@ -45,6 +45,12 @@ The **Cisco SD-WAN MCP Server** abstracts the complexity of the vManage REST API
 * **Operational Health:** Check alarms, events, BFD sessions, and control connections.
 * **Deep Dives:** Fetch running configurations, interface statistics, and OMP routes.
 
+## 🎥 Demo
+
+<video src="src/cisco-sdwan-mcp.mp4" controls="controls" style="max-width: 100%;">
+  Your browser does not support the video tag.
+</video>
+
 ## ✅ Prerequisites
 
 * Python 3.10 or higher
