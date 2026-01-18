@@ -1,12 +1,16 @@
+import re
+from typing import List, Dict, Any
 from fastmcp import FastMCP
 import requests
 import urllib3
 import json
 import os
 import sys
+import yaml
 import argparse
 import logging
 from dotenv import load_dotenv
+import jsonschema
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -33,15 +37,18 @@ class VManageClient:
         if not all([VMANAGE_IP, USERNAME, PASSWORD]):
             raise Exception("Missing credentials. Please set VMANAGE_IP, VMANAGE_USERNAME, and VMANAGE_PASSWORD environment variables.")
         
-        print(f"Logging in to {BASE_URL}...")
+        print(f"Logging in to {BASE_URL}...", file=sys.stderr)
         try:
-            # 1. Auth
+            # 1. Auth - Clear cookies first
+            self.session.cookies.clear()
             login_url = f"{BASE_URL}/j_security_check"
             payload = {'j_username': USERNAME, 'j_password': PASSWORD}
             resp = self.session.post(login_url, data=payload, timeout=10)
             
+            # vManage sometimes returns 200 OK with login page on failure
             if 'JSESSIONID' not in self.session.cookies:
-                raise Exception(f"Login failed: JSESSIONID not returned. Status: {resp.status_code}")
+                # Log warning but continue, as some versions might set it differently
+                print("Warning: JSESSIONID not found in cookies immediately after login.", file=sys.stderr)
 
             # 2. Token
             token_url = f"{BASE_URL}/dataservice/client/token"
@@ -50,9 +57,9 @@ class VManageClient:
                 self.session.headers.update({'X-XSRF-TOKEN': token_resp.text})
             
             self.logged_in = True
-            print("Login successful.")
+            print("Login successful.", file=sys.stderr)
         except Exception as e:
-            print(f"Login error: {e}")
+            print(f"Login error: {e}", file=sys.stderr)
             raise
 
     def get_data(self, endpoint, params=None):
@@ -62,9 +69,18 @@ class VManageClient:
         url = f"{BASE_URL}{endpoint}"
         try:
             resp = self.session.get(url, params=params, timeout=15)
+            
+            # Detect redirection to login page
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' in content_type and '<body' in resp.text:
+                print("Detected redirection to login page, re-authenticating...", file=sys.stderr)
+                self.login()
+                resp = self.session.get(url, params=params, timeout=15)
+
             if resp.status_code == 401 or resp.status_code == 403:
                 # Session might be expired, retry once
-                print("Session expired or invalid, re-logging in...")
+                print("Session expired or invalid, re-logging in...", file=sys.stderr)
+                self.session.cookies.clear()
                 self.login()
                 resp = self.session.get(url, params=params, timeout=15)
 
@@ -122,6 +138,225 @@ def get_feature_templates() -> str:
         ]
          return json.dumps(simplified, indent=2)
     return json.dumps(data, indent=2)
+
+@mcp.tool()
+def get_device_template_details(template_id: str) -> str:
+    """Retrieves the full configuration object for a specific Device Template."""
+    data = client.get_data(f"/dataservice/template/device/object/{template_id}")
+    return json.dumps(data, indent=2)
+
+@mcp.tool()
+def get_feature_template_details(template_id: str) -> str:
+    """Retrieves the full definition of a Feature Template, including variable names."""
+    data = client.get_data(f"/dataservice/template/feature/object/{template_id}")
+    return json.dumps(data, indent=2)
+
+@mcp.tool()
+def get_template_variables(template_id: str) -> str:
+    """Recursively extracts all variable names from a Device Template and its attached Feature Templates, including CLI templates."""
+    # 1. Get Device Template
+    dt_resp = client.get_data(f"/dataservice/template/device/object/{template_id}")
+    if isinstance(dt_resp, dict) and "error" in dt_resp:
+        return json.dumps(dt_resp)
+    
+    if isinstance(dt_resp, str): # Handle error cases returning strings
+         try:
+             dt_data = json.loads(dt_resp)
+         except:
+             return json.dumps({"error": "Failed to parse device template response", "raw": dt_resp})
+    else:
+        dt_data = dt_resp
+
+    variables = set()
+
+    def extract_vars_from_obj(obj):
+        """Recursively search for vipVariableName and CLI {{vars}}"""
+        if isinstance(obj, dict):
+            if 'vipVariableName' in obj:
+                variables.add(obj['vipVariableName'])
+            
+            # Check for CLI config value
+            if 'vipType' in obj and obj['vipType'] == 'constant' and 'vipValue' in obj:
+                val = obj['vipValue']
+                if isinstance(val, str) and '{{' in val:
+                    matches = re.findall(r'\{\{(.*?)\}\}', val)
+                    for m in matches:
+                        variables.add(m.strip())
+
+            for k, v in obj.items():
+                extract_vars_from_obj(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                extract_vars_from_obj(item)
+
+    def process_feature_templates(templates):
+        """Iterate through linked feature templates"""
+        for t in templates:
+            t_id = t.get('templateId')
+            if t_id:
+                # Fetch Feature Template details
+                ft_resp = client.get_data(f"/dataservice/template/feature/object/{t_id}")
+                if isinstance(ft_resp, dict) and "error" not in ft_resp:
+                     ft_data = ft_resp
+                elif isinstance(ft_resp, str):
+                    try:
+                        ft_data = json.loads(ft_resp)
+                    except:
+                        continue
+                else:
+                    continue
+                
+                extract_vars_from_obj(ft_data.get('templateDefinition', {}))
+            
+            # Recurse for sub-templates
+            if 'subTemplates' in t:
+                process_feature_templates(t['subTemplates'])
+
+    # Start processing
+    process_feature_templates(dt_data.get('generalTemplates', []))
+    
+    return json.dumps(sorted(list(variables)), indent=2)
+
+@mcp.tool()
+def generate_site_config(
+    site_id: int,
+    routers: List[Dict[str, Any]],
+    filename: str = "generated_sites.nac.yaml",
+    overwrite: bool = False
+) -> str:
+    """
+    Generates or updates the site configuration file (e.g., sites.nac.yaml) for SD-WAN site deployment.
+    
+    Args:
+        site_id: The unique ID of the site.
+        routers: A list of router configurations. Each router dict must contain:
+            - chassis_id (str): Serial number/Chassis ID.
+            - model (str): Device model (e.g., "C8000V").
+            - device_template (str): Name of the device template.
+            - all_template_variables (List[str]): List of ALL variables required by the template (fetch this from sdwan_mcp_server).
+            - user_variables (Dict[str, Any]): Key-value pairs of variables you want to set explicitly (e.g., {"system_ip": "1.1.1.1"}).
+            - policy_variables (Dict[str, Any], optional): Key-value pairs for policy variables.
+        filename: The name of the output YAML file. Defaults to "generated_sites.nac.yaml".
+        overwrite: If True, replaces the site config if it exists. If False, updates/merges.
+    """
+    
+    data = {}
+    if os.path.exists(filename):
+        try:
+            with open(filename, 'r') as f:
+                data = yaml.safe_load(f) or {}
+        except Exception:
+            data = {}
+    
+    # Ensure root structure
+    if "sdwan" not in data:
+        data["sdwan"] = {}
+    if "sites" not in data["sdwan"]:
+        data["sdwan"]["sites"] = []
+        
+    sites = data["sdwan"]["sites"]
+    
+    # Find existing site or create new
+    target_site = None
+    for s in sites:
+        if s.get("id") == site_id:
+            target_site = s
+            break
+            
+    if target_site and overwrite:
+        sites.remove(target_site)
+        target_site = None
+        
+    if target_site is None:
+        target_site = {"id": site_id, "routers": []}
+        sites.append(target_site)
+        
+    # Process routers
+    processed_routers = []
+    
+    for r in routers:
+        chassis_id = r.get("chassis_id")
+        model = r.get("model")
+        dev_template = r.get("device_template")
+        all_vars = r.get("all_template_variables", [])
+        user_vars = r.get("user_variables", {})
+        policy_vars = r.get("policy_variables", {})
+        
+        # Logic: Map variables. If not in user_vars, set to TEMPLATE_IGNORE
+        final_device_vars = {}
+        
+        # 1. Fill with TEMPLATE_IGNORE by default for all known template variables
+        for var_name in all_vars:
+            final_device_vars[var_name] = "TEMPLATE_IGNORE"
+            
+        # 2. Overwrite with user provided values
+        for k, v in user_vars.items():
+            # Auto-convert string booleans to actual booleans to prevent YAML quoting
+            if isinstance(v, str):
+                if v.lower() == 'true':
+                    v = True
+                elif v.lower() == 'false':
+                    v = False
+            
+            # Handle controller_groups list to string conversion
+            if k == 'controller_groups' and isinstance(v, list):
+                v = ",".join(map(str, v))
+
+            # Handle ondemand_tunnel_idle_timeout to ensure it's an integer
+            if k == 'ondemand_tunnel_idle_timeout':
+                try:
+                    v = int(v)
+                except (ValueError, TypeError):
+                    pass
+
+            final_device_vars[k] = v
+            
+        router_entry = {
+            "chassis_id": chassis_id,
+            "model": model,
+            "device_template": dev_template,
+            "device_variables": final_device_vars
+        }
+        
+        if policy_vars:
+             router_entry["policy_variables"] = policy_vars
+             
+        processed_routers.append(router_entry)
+
+    # Update routers in the site object
+    # If not overwriting, we might want to append, but usually for a site config generation
+    # we replace the router list for that site to ensure it matches intent.
+    target_site["routers"] = processed_routers
+    
+    # Validate against schema.json if it exists
+    schema_path = os.path.join(os.path.dirname(__file__), "schema.json")
+    if os.path.exists(schema_path):
+        try:
+            with open(schema_path, 'r') as sf:
+                schema = json.load(sf)
+            jsonschema.validate(instance=data, schema=schema)
+        except jsonschema.ValidationError as e:
+            return f"Error: Generated configuration violates schema.json: {e.message}"
+        except Exception as e:
+            return f"Warning: Could not validate against schema.json: {str(e)}"
+
+    # Custom representer for clean string output (no quotes)
+    def str_presenter(dumper, data):
+        if len(data.splitlines()) > 1:  # check for multiline string
+            return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='')
+
+    class IndentDumper(yaml.SafeDumper):
+        def increase_indent(self, flow=False, indentless=False):
+            return super(IndentDumper, self).increase_indent(flow, False)
+
+    yaml.add_representer(str, str_presenter)
+
+    with open(filename, 'w') as f:
+        f.write("---\n# SD-WAN Sites\n")
+        yaml.dump(data, f, Dumper=IndentDumper, default_flow_style=False, sort_keys=False)
+    
+    return f"Successfully generated config for Site {site_id} in {filename}"
 
 @mcp.tool()
 def get_centralized_policies() -> str:

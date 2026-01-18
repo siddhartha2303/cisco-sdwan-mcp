@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SD-WAN Sites Configuration Schema",
+  "type": "object",
+  "properties": {
+    "sdwan": {
+      "type": "object",
+      "properties": {
+        "sites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Unique identifier for the site"
+              },
+              "routers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "chassis_id": {
+                      "type": "string",
+                      "description": "Chassis ID or Serial Number of the device"
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "Device model (e.g., C8000V, ISR4331)"
+                    },
+                    "device_template": {
+                      "type": "string",
+                      "description": "Name of the device template to attach"
+                    },
+                    "device_variables": {
+                      "type": "object",
+                      "description": "Key-value pairs for device-specific variables",
+                      "additionalProperties": {
+                        "type": ["string", "number", "boolean", "null"]
+                      }
+                    },
+                    "policy_variables": {
+                      "type": "object",
+                      "description": "Key-value pairs for policy-specific variables",
+                      "additionalProperties": {
+                        "type": ["string", "number", "boolean", "null"]
+                      }
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "List of tags associated with the device"
+                    },
+                    "configuration_group": {
+                      "type": "string",
+                      "description": "Configuration group name"
+                    },
+                    "configuration_group_deploy": {
+                      "type": "boolean",
+                      "description": "Whether to deploy the configuration group"
+                    },
+                    "policy_group": {
+                      "type": "string",
+                      "description": "Policy group name"
+                    },
+                    "policy_group_deploy": {
+                      "type": "boolean",
+                      "description": "Whether to deploy the policy group"
+                    },
+                    "topology_label": {
+                      "type": "string",
+                      "description": "Topology label for the device"
+                    }
+                  },
+                  "required": ["chassis_id", "model", "device_template"]
+                }
+              }
+            },
+            "required": ["id", "routers"]
+          }
+        }
+      },
+      "required": ["sites"]
+    }
+  },
+  "required": ["sdwan"]
+}
